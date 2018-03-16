@@ -1,0 +1,6 @@
+[package]
+name = "tlog"
+version = "0.1.0"
+authors = ["Khaled Karam <khaledkbadr@outlook.com>"]
+
+[dependencies]
