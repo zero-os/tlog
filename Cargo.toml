@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["Khaled Karam <khaledkbadr@outlook.com>"]
 
 [dependencies]
+chrono = "0.4"
+log = "0.4"
