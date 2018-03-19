@@ -1,0 +1,10 @@
+[package]
+name = "backends"
+version = "0.1.0"
+authors = ["Khaled Karam <khaledkbadr@outlook.com>"]
+
+[dependencies]
+grpcio = "0.2"
+futures = "0.1"
+protobuf = "1.4"
+tlog = { version = "0.1", path = "../tlog" }
