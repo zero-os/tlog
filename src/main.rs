@@ -1,10 +1,10 @@
-extern crate tlog_server;
+extern crate tlog;
 
 use std::collections::HashMap;
 use std::io::{self, Result};
 
-use tlog_server::tlog::backend::Backend;
-use tlog_server::tlog::transaction::{Transaction, TransactionLog};
+use tlog::backend::Backend;
+use tlog::transaction::{Transaction, TransactionLog};
 
 struct TestBackend {
     chain: HashMap<Vec<u8>, Vec<u8>>,

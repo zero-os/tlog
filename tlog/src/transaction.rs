@@ -1,7 +1,7 @@
 use chrono::prelude::*;
 use std::io::{self, Result};
 use bincode::{deserialize, serialize};
-use tlog::backend::Backend;
+use backend::Backend;
 
 const MAX_TRANSACTIONS_TO_FLUSH: u64 = 10;
 
