@@ -17,14 +17,3 @@ fn main() {
     transaction_log.add(&trans2).unwrap();
 }
 
-// ============================== Protocol =====================
-// TODO: all of it :)
-
-// ==============================   Tlog   =====================
-// TODO: retieval
-// TODO: namespace
-// TODO: consider changing backends data to vec<u8> instead of &[u8]
-
-// ============================== Backends ======================
-// TODO: read
-// TODO: (optional) add redis as a popular backend

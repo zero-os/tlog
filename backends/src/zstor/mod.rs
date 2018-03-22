@@ -33,4 +33,14 @@ impl Backend for Zstor {
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         Ok(())
     }
+
+    fn fetch(self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+        let mut req = model::ReadRequest::new();
+        req.set_key(key.to_vec());
+        let resp = self.client
+            .read(&req)
+            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+        // TODO: check what zstor return if no data found
+        Ok(Some(resp.data))
+    }
 }
