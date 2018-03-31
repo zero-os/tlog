@@ -28,7 +28,7 @@ pub trait Backend {
     /// gets the data associated with key provided from the backend
     ///
     /// `fetch` should handle how the data is fetched
-    fn fetch(&self, key: &[u8]) -> Result<Option<&[u8]>>;
+    fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
 }
 
 // TODO: open an issue if the implementation was still as described below
@@ -191,7 +191,7 @@ where
 
     /// returns next branch id based on self.branches last index
     fn next_branch(&self) -> usize {
-        if self.branches.len() != 0 {
+        if !self.branches.is_empty() {
             self.branches.len()
         } else {
             0
@@ -244,10 +244,10 @@ mod tests {
             Ok(())
         }
 
-        fn fetch(&self, key: &[u8]) -> Result<Option<&[u8]>> {
+        fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
             let data = self.get(key);
             match data {
-                Some(data) => Ok(Some(&data[..])),
+                Some(data) => Ok(Some(data.to_vec())),
                 None => Ok(None),
             }
         }

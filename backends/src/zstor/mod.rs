@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::io::{self, Result};
-use tlog::backend::Backend;
+use tlog::Backend;
 mod generated;
 
 use self::generated::daemon as model;
@@ -34,7 +34,7 @@ impl Backend for Zstor {
         Ok(())
     }
 
-    fn fetch(self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
         let mut req = model::ReadRequest::new();
         req.set_key(key.to_vec());
         let resp = self.client
