@@ -24,19 +24,19 @@ impl Zstor {
 }
 
 impl Backend for Zstor {
-    fn push(&mut self, key: &[u8], data: &[u8]) -> Result<()> {
+    fn push(&mut self, key: Vec<u8>, data: Vec<u8>) -> Result<()> {
         let mut req = model::WriteRequest::new();
-        req.set_key(key.to_vec());
-        req.set_data(data.to_vec());
+        req.set_key(key);
+        req.set_data(data);
         self.client
             .write(&req)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
         Ok(())
     }
 
-    fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
+    fn fetch(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         let mut req = model::ReadRequest::new();
-        req.set_key(key.to_vec());
+        req.set_key(key);
         let resp = self.client
             .read(&req)
             .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;

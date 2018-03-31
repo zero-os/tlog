@@ -23,12 +23,12 @@ pub trait Backend {
     /// pushes the data to the backend
     ///
     /// `push` should handle how the data is stored, ie: double linkedlist...etc
-    fn push(&mut self, key: &[u8], data: &[u8]) -> Result<()>;
+    fn push(&mut self, key: Vec<u8>, data: Vec<u8>) -> Result<()>;
 
     /// gets the data associated with key provided from the backend
     ///
     /// `fetch` should handle how the data is fetched
-    fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>>;
+    fn fetch(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
 }
 
 // TODO: open an issue if the implementation was still as described below
@@ -185,7 +185,7 @@ where
         let serialized_branch =
             serialize(branch).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-        self.backend.push(&branch_id, &serialized_branch)?;
+        self.backend.push(branch_id, serialized_branch)?;
         Ok(())
     }
 
@@ -224,8 +224,10 @@ where
 
             let serialized_node =
                 serialize(&node).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
-            self.backend.push(node_id.as_bytes(), &serialized_node)?;
-            Ok(node_id.into_bytes())
+
+            let node_id = node_id.into_bytes();
+            self.backend.push(node_id.clone(), serialized_node)?;
+            Ok(node_id)
         } else {
             let msg = format!("Branch {} is not found", branch_id);
             Err(io::Error::new(io::ErrorKind::Other, msg))
@@ -239,13 +241,13 @@ mod tests {
     use std::collections::HashMap;
 
     impl Backend for HashMap<Vec<u8>, Vec<u8>> {
-        fn push(&mut self, key: &[u8], data: &[u8]) -> Result<()> {
-            self.insert(key.to_vec(), data.to_vec());
+        fn push(&mut self, key: Vec<u8>, data: Vec<u8>) -> Result<()> {
+            self.insert(key, data);
             Ok(())
         }
 
-        fn fetch(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
-            let data = self.get(key);
+        fn fetch(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
+            let data = self.get(&key);
             match data {
                 Some(data) => Ok(Some(data.to_vec())),
                 None => Ok(None),
