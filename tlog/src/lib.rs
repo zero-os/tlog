@@ -1,5 +1,6 @@
 extern crate bincode;
 extern crate chrono;
+extern crate serde;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -10,7 +11,6 @@ extern crate serde_derive;
 //          -> loop over the backend to load the associated branches metadata in memory
 //          -> check if all metadata are legit (if tail was the last node added), update if not. To recover from crashes
 //     fn flush: (i/p) pushes all the registered branches metadata to the backend
-//     fn scan: (i/p) branch_id (default), start_transaction_id, stop_transaction_id, stop_timestamp -> the whole tree seq t6 -> t5 -> t2 -> t1
 //     fn replay: start_transaction_id, stop_transaction_id -> (iterator)
 //     fn replayt: start_timestamp, stop_timestamp -> (iterator)
 
@@ -38,7 +38,7 @@ pub trait Backend {
 /// Payload is representation of supported commands
 ///
 /// each command contains its associated data
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum Transaction<'a> {
     /// Set <Key> <Value>
     Set((&'a [u8], &'a [u8])),
@@ -81,7 +81,7 @@ impl<'a> Node<'a> {
 }
 
 /// Branch metadata
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 struct Metadata {
     id: u64,
     head: u64,
@@ -126,6 +126,69 @@ pub struct Tree<'a, T> {
     branches: Vec<Branch>,
 }
 
+pub struct ChainIter<'a, T: 'a>
+where
+    T: Backend,
+{
+    tree: &'a Tree<'a, T>,
+    branch_id: usize,
+    start: i64,
+    end: i64,
+    node_index: usize,
+    branch_index: usize,
+}
+
+impl<'a, T> ChainIter<'a, T>
+where
+    T: Backend,
+{
+    fn new(tree: &'a Tree<'a, T>, branch_id: usize, start: i64, end: i64) -> Self {
+        Self {
+            tree,
+            branch_id,
+            start,
+            end,
+            node_index: 1,
+            branch_index: 0,
+        }
+    }
+}
+
+impl<'a, T> Iterator for ChainIter<'a, T>
+where
+    T: Backend,
+{
+    type Item = Result<Vec<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let mut chain_points = self.tree.get_chain_points(self.branch_id);
+        chain_points.reverse();
+
+        let mut result = None;
+
+        if self.branch_index < chain_points.len() {
+            let (branch_key, length) = &chain_points[self.branch_index];
+            if self.node_index <= *length {
+                let node_key = format!("{}.{}", branch_key, self.node_index);
+                trace!("Replay: fetching {}", node_key);
+                let node = self.tree.backend.fetch(node_key.into_bytes()).ok()??;
+                // FIXME: the method should return Transaction but due to lifetime stuff
+                // FIXME: it will return vec<u8> for now until the deserialization is fixed
+                // let deserialized_transaction: Transaction = deserialize(&node).ok()?;
+                result = Some(Ok(node));
+
+                if self.node_index == *length {
+                    self.branch_index += 1;
+                    self.node_index = 0;
+                }
+                self.node_index += 1;
+            }
+        }
+
+        result
+    }
+}
+
 impl<'a, T> Tree<'a, T> {
     pub fn new(namespace: &'a str, backend: T) -> Self {
         Tree {
@@ -136,6 +199,7 @@ impl<'a, T> Tree<'a, T> {
     }
 }
 
+// TODO: investigate moving Branch related methods to branch
 impl<'a, T> Tree<'a, T>
 where
     T: Backend,
@@ -198,7 +262,32 @@ where
         }
     }
 
-    // TODO: move push to Branch struct
+    /// calculate the transaction log chain recursively in a descending order
+    /// which will help in replaying whole chain of the branch
+    ///
+    /// for example if a branch doesn't have any parent the return would be `vec![(branch_key, length)]`
+    /// but if it has a parent branch the return will include the branch key and tail of the parent and so on
+    /// `vec![(branch_key, length), (parent_branch_key, length)]`
+    fn get_chain_points(&self, branch_id: usize) -> Vec<(String, usize)> {
+        let mut chain_points = vec![];
+        let branch = &self.branches[branch_id];
+
+        if let Some(metadata) = &branch.metadata {
+            let branch_key = format!("{}.{}", self.namespace, branch_id);
+            let tail_key = metadata.tail as usize;
+            chain_points.push((branch_key, tail_key));
+
+            if let Some(parent_metadata) = &branch.parent_metadata {
+                let mut parent_chain_points = self.get_chain_points(parent_metadata.id as usize);
+                chain_points.append(&mut parent_chain_points);
+            }
+        }
+
+        chain_points
+    }
+
+    // TODO: use timestamp as the key (if needed)
+    // TODO: return empty result
     /// stores the provided node in the backend
     ///
     /// returns node id
@@ -233,6 +322,10 @@ where
             Err(io::Error::new(io::ErrorKind::Other, msg))
         }
     }
+
+    pub fn replay_all(&self, branch_id: usize) -> ChainIter<T> {
+        ChainIter::new(self, branch_id, 0, 0)
+    }
 }
 
 #[cfg(test)]
@@ -262,6 +355,7 @@ mod tests {
         let backend: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
+
         // branch is saved in self.branches correctly
         assert_eq!(tlog_tree.branches.len(), 1);
         assert_eq!(branch_id, 0);
@@ -420,6 +514,44 @@ mod tests {
     }
 
     #[test]
+    fn replay_all() {
+        let namespace = "default";
+
+        let backend: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut tlog_tree = Tree::new(namespace, backend);
+        let branch_id = tlog_tree.create_branch().unwrap();
+
+        let transaction1 = Transaction::Set((b"hello1", b"world1"));
+        let node1_id = tlog_tree.push(branch_id, transaction1.clone()).unwrap();
+        let transaction2 = Transaction::Set((b"hello2", b"world2"));
+        let node2_id = tlog_tree.push(branch_id, transaction2.clone()).unwrap();
+
+        let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
+        let transaction3 = Transaction::Set((b"hello3", b"world3"));
+        let node3_id = tlog_tree
+            .push(forked_branch_id, transaction3.clone())
+            .unwrap();
+
+        let forked_branch_id = tlog_tree.fork(forked_branch_id).unwrap();
+        let transaction4 = Transaction::Set((b"hello4", b"world4"));
+        let node4_id = tlog_tree
+            .push(forked_branch_id, transaction4.clone())
+            .unwrap();
+
+        let transaction_chain = vec![transaction1, transaction2, transaction3, transaction4];
+        for (idx, x) in tlog_tree.replay_all(forked_branch_id).enumerate() {
+            let x = x.unwrap();
+            let trans: Transaction = deserialize(&x).unwrap();
+            assert_eq!(trans, transaction_chain[idx]);
+        }
+    }
+
+    #[test]
     #[ignore]
-    fn store_metadata_successfully_on_max_transactions() {}
+    fn replay_with_timestamp_limited() {}
+
+    #[test]
+    #[ignore]
+    fn load_branches_metadata_in_start() {}
+
 }
