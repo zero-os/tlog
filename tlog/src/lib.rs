@@ -12,7 +12,6 @@ extern crate serde_derive;
 //          -> check if all metadata are legit (if tail was the last node added), update if not. To recover from crashes
 //     fn flush: (i/p) pushes all the registered branches metadata to the backend
 //     fn replay: start_transaction_id, stop_transaction_id -> (iterator)
-//     fn replayt: start_timestamp, stop_timestamp -> (iterator)
 
 use bincode::{deserialize, serialize};
 use chrono::prelude::*;
@@ -39,29 +38,28 @@ pub trait Backend {
 ///
 /// each command contains its associated data
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub enum Transaction<'a> {
+pub enum Transaction {
     /// Set <Key> <Value>
-    Set((&'a [u8], &'a [u8])),
+    Set((Vec<u8>, Vec<u8>)),
     /// Delete <Key>
-    Delete(&'a [u8]),
+    Delete(Vec<u8>),
 }
 
 /// Transaction log representation with its associated metadata
 ///
 /// the metadata is the timestamp and parent reference used in `replay` and `replayt`
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
-struct Node<'a> {
-    #[serde(borrow)]
-    transaction: Transaction<'a>,
+struct Node {
+    transaction: Transaction,
     /// current epoch time
     timestamp: i64,
     /// parent node in `namespace.branch_id.seq` format
     parent: Option<Vec<u8>>,
 }
 
-impl<'a> Node<'a> {
+impl Node {
     /// creates new Node with the current unix timestamp
-    fn new(transaction: Transaction<'a>) -> Self {
+    fn new(transaction: Transaction) -> Self {
         trace!("create new transaction");
         Node {
             transaction,
@@ -158,13 +156,11 @@ impl<'a, T> Iterator for ChainIter<'a, T>
 where
     T: Backend,
 {
-    type Item = Result<Vec<u8>>;
+    type Item = Result<Transaction>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut chain_points = self.tree.get_chain_points(self.branch_id);
         chain_points.reverse();
-
-        let mut result = None;
 
         if self.branch_index < chain_points.len() {
             let (branch_key, length) = &chain_points[self.branch_index];
@@ -172,20 +168,18 @@ where
                 let node_key = format!("{}.{}", branch_key, self.node_index);
                 trace!("Replay: fetching {}", node_key);
                 let node = self.tree.backend.fetch(node_key.into_bytes()).ok()??;
-                // FIXME: the method should return Transaction but due to lifetime stuff
-                // FIXME: it will return vec<u8> for now until the deserialization is fixed
-                // let deserialized_transaction: Transaction = deserialize(&node).ok()?;
-                result = Some(Ok(node));
+                let deserialized_transaction: Transaction = deserialize(&node).ok()?;
 
                 if self.node_index == *length {
                     self.branch_index += 1;
                     self.node_index = 0;
                 }
                 self.node_index += 1;
+                return Some(Ok(deserialized_transaction));
             }
         }
 
-        result
+        None
     }
 }
 
@@ -399,9 +393,9 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction = Transaction::Set((b"hello", b"world"));
+        let transaction = Transaction::Set((b"hello".to_vec(), b"world".to_vec()));
         tlog_tree.push(branch_id, transaction).unwrap();
-        let transaction = Transaction::Set((b"hello", b"world"));
+        let transaction = Transaction::Set((b"hello".to_vec(), b"world".to_vec()));
         tlog_tree.push(branch_id, transaction).unwrap();
 
         let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
@@ -420,7 +414,7 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction = Transaction::Set((b"hello", b"world"));
+        let transaction = Transaction::Set((b"hello".to_vec(), b"world".to_vec()));
         tlog_tree.push(branch_id, transaction).unwrap();
 
         let branch_metadata = &tlog_tree.branches[branch_id].metadata;
@@ -437,9 +431,9 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction1 = Transaction::Set((b"hello", b"world"));
-        let transaction2 = Transaction::Set((b"hello2", b"world2"));
-        let transaction3 = Transaction::Set((b"hello3", b"world3"));
+        let transaction1 = Transaction::Set((b"hello".to_vec(), b"world".to_vec()));
+        let transaction2 = Transaction::Set((b"hello2".to_vec(), b"world2".to_vec()));
+        let transaction3 = Transaction::Set((b"hello3".to_vec(), b"world3".to_vec()));
         tlog_tree.push(branch_id, transaction1).unwrap();
         tlog_tree.push(branch_id, transaction2).unwrap();
         tlog_tree.push(branch_id, transaction3).unwrap();
@@ -458,14 +452,14 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction = Transaction::Set((b"hello", b"world"));
+        let transaction = Transaction::Set((b"hello".to_vec(), b"world".to_vec()));
         let node_key = tlog_tree.push(branch_id, transaction).unwrap();
 
         let deserialized_node: Node = deserialize(&tlog_tree.backend[&node_key]).unwrap();
 
         assert_eq!(
             deserialized_node.transaction,
-            Transaction::Set((b"hello", b"world"))
+            Transaction::Set((b"hello".to_vec(), b"world".to_vec()))
         );
     }
 
@@ -477,9 +471,9 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction = Transaction::Set((b"hello1", b"world1"));
+        let transaction = Transaction::Set((b"hello1".to_vec(), b"world1".to_vec()));
         let node1_id = tlog_tree.push(branch_id, transaction).unwrap();
-        let transaction = Transaction::Set((b"hello1", b"world2"));
+        let transaction = Transaction::Set((b"hello1".to_vec(), b"world2".to_vec()));
         let node2_id = tlog_tree.push(branch_id, transaction).unwrap();
 
         let deserialized_node1: Node = deserialize(&tlog_tree.backend[&node1_id]).unwrap();
@@ -498,13 +492,13 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction = Transaction::Set((b"hello1", b"world1"));
-        let node1_id = tlog_tree.push(branch_id, transaction).unwrap();
-        let transaction = Transaction::Set((b"hello2", b"world2"));
-        let node2_id = tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set((b"hello1".to_vec(), b"world1".to_vec()));
+        tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set((b"hello2".to_vec(), b"world2".to_vec()));
+        tlog_tree.push(branch_id, transaction).unwrap();
 
         let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
-        let transaction = Transaction::Set((b"hello3", b"world3"));
+        let transaction = Transaction::Set((b"hello3".to_vec(), b"world3".to_vec()));
         let node3_id = tlog_tree.push(forked_branch_id, transaction).unwrap();
 
         let deserialized_node3: Node = deserialize(&tlog_tree.backend[&node3_id]).unwrap();
@@ -521,28 +515,26 @@ mod tests {
         let mut tlog_tree = Tree::new(namespace, backend);
         let branch_id = tlog_tree.create_branch().unwrap();
 
-        let transaction1 = Transaction::Set((b"hello1", b"world1"));
-        let node1_id = tlog_tree.push(branch_id, transaction1.clone()).unwrap();
-        let transaction2 = Transaction::Set((b"hello2", b"world2"));
-        let node2_id = tlog_tree.push(branch_id, transaction2.clone()).unwrap();
+        let transaction1 = Transaction::Set((b"hello1".to_vec(), b"world1".to_vec()));
+        tlog_tree.push(branch_id, transaction1.clone()).unwrap();
+        let transaction2 = Transaction::Set((b"hello2".to_vec(), b"world2".to_vec()));
+        tlog_tree.push(branch_id, transaction2.clone()).unwrap();
 
         let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
-        let transaction3 = Transaction::Set((b"hello3", b"world3"));
-        let node3_id = tlog_tree
+        let transaction3 = Transaction::Set((b"hello3".to_vec(), b"world3".to_vec()));
+        tlog_tree
             .push(forked_branch_id, transaction3.clone())
             .unwrap();
 
         let forked_branch_id = tlog_tree.fork(forked_branch_id).unwrap();
-        let transaction4 = Transaction::Set((b"hello4", b"world4"));
-        let node4_id = tlog_tree
+        let transaction4 = Transaction::Set((b"hello4".to_vec(), b"world4".to_vec()));
+        tlog_tree
             .push(forked_branch_id, transaction4.clone())
             .unwrap();
 
         let transaction_chain = vec![transaction1, transaction2, transaction3, transaction4];
         for (idx, x) in tlog_tree.replay_all(forked_branch_id).enumerate() {
-            let x = x.unwrap();
-            let trans: Transaction = deserialize(&x).unwrap();
-            assert_eq!(trans, transaction_chain[idx]);
+            assert_eq!(x.unwrap(), transaction_chain[idx]);
         }
     }
 
