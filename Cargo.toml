@@ -6,3 +6,7 @@ authors = ["Khaled Karam <khaledkbadr@outlook.com>"]
 [dependencies]
 tlog = { path = "tlog" }
 backends = { path = "backends" }
+log = "0.4"
+structopt = "0.2"
+atoi = "0.2"
+hex = "0.3"

@@ -11,7 +11,6 @@ extern crate serde_derive;
 //          -> loop over the backend to load the associated branches metadata in memory
 //          -> check if all metadata are legit (if tail was the last node added), update if not. To recover from crashes
 //     fn flush: (i/p) pushes all the registered branches metadata to the backend
-//     fn replay: start_transaction_id, stop_transaction_id -> (iterator)
 
 use bincode::{deserialize, serialize};
 use chrono::prelude::*;
@@ -40,7 +39,7 @@ pub trait Backend {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum Transaction {
     /// Set <Key> <Value>
-    Set((Vec<u8>, Vec<u8>)),
+    Set(Vec<u8>, Vec<u8>),
     /// Delete <Key>
     Delete(Vec<u8>),
 }
@@ -71,10 +70,6 @@ impl Node {
     fn set_parent(&mut self, namespace: &str, branch: u64, parent: u64) {
         let parent_id = format!("{}.{}.{}", namespace, branch, parent);
         self.parent = Some(parent_id.into_bytes());
-    }
-
-    fn get_parent(&self) -> Option<&Vec<u8>> {
-        self.parent.as_ref()
     }
 }
 
@@ -130,8 +125,6 @@ where
 {
     tree: &'a Tree<'a, T>,
     branch_id: usize,
-    start: i64,
-    end: i64,
     node_index: usize,
     branch_index: usize,
 }
@@ -140,12 +133,10 @@ impl<'a, T> ChainIter<'a, T>
 where
     T: Backend,
 {
-    fn new(tree: &'a Tree<'a, T>, branch_id: usize, start: i64, end: i64) -> Self {
+    fn new(tree: &'a Tree<'a, T>, branch_id: usize) -> Self {
         Self {
             tree,
             branch_id,
-            start,
-            end,
             node_index: 1,
             branch_index: 0,
         }
@@ -198,6 +189,15 @@ impl<'a, T> Tree<'a, T>
 where
     T: Backend,
 {
+
+    pub fn branch_exists(&self, branch_id: usize) -> bool {
+        self.branches.len() > branch_id
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.branches.is_empty()
+    }
+
     /// adds empty branch to tree
     ///
     /// return branch id
@@ -318,7 +318,7 @@ where
     }
 
     pub fn replay_all(&self, branch_id: usize) -> ChainIter<T> {
-        ChainIter::new(self, branch_id, 0, 0)
+        ChainIter::new(self, branch_id)
     }
 }
 
