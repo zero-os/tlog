@@ -285,7 +285,7 @@ where
     /// stores the provided node in the backend
     ///
     /// returns node id
-    pub fn push(&mut self, branch_id: usize, transaction: Transaction) -> Result<Vec<u8>> {
+    pub fn push(&mut self, branch_id: usize, transaction: Transaction) -> Result<()> {
         let mut node = Node::new(transaction);
         let mut node_id = format!("{}.{}", self.namespace, branch_id);
 
@@ -308,9 +308,8 @@ where
             let serialized_node =
                 serialize(&node).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
 
-            let node_id = node_id.into_bytes();
-            self.backend.push(node_id.clone(), serialized_node)?;
-            Ok(node_id)
+            self.backend.push(node_id.into_bytes(), serialized_node)?;
+            Ok(())
         } else {
             let msg = format!("Branch {} is not found", branch_id);
             Err(io::Error::new(io::ErrorKind::Other, msg))

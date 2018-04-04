@@ -11,12 +11,12 @@ use self::connection::Connection;
 #[derive(Debug)]
 pub enum Command {
     PING,
-    Set(Vec<u8>, Vec<u8>),
-    Delete(Vec<u8>),
-    Replay(Vec<u8>),
     BranchNew,
     BranchFork(usize),
     Branch(usize),
+    Set(Vec<u8>, Vec<u8>),
+    Delete(Vec<u8>),
+    Replay(Vec<u8>),
     NOTSUPPORTED,
 }
 
@@ -35,14 +35,14 @@ impl<'a> Server<'a> {
     pub fn new(addr: &str, zstor_addr: &str, namespace: &'a str, branch: usize) -> Self {
         let listener = TcpListener::bind(addr).unwrap();
         let storage = Zstor::new(zstor_addr);
-        let tree = Tree::new(namespace, storage);
+        let mut tree = Tree::new(namespace, storage);
 
-        // if branch != 0 && !tree.branch_exists(branch) {
-        //     panic!("branch {} does not exist", branch);
-        // } else {
-        //     tree.create_branch().unwrap();
-        // }
-        // info!("branches: loading branch {}", branch);
+        if branch != 0 && !tree.branch_exists(branch) {
+            panic!("branch {} does not exist", branch);
+        } else {
+            tree.create_branch().unwrap();
+        }
+        info!("branches: loading branch {}", branch);
 
         Server {
             listener,
@@ -66,9 +66,23 @@ impl<'a> Server<'a> {
                             Command::PING => {
                                 conn.writer.send_text("PONG")?;
                             }
+                            Command::BranchNew => {
+                                let branch_id = self.tree.create_branch()?.to_string();
+                                conn.writer.send_text(&branch_id)?;
+                            }
+                            Command::BranchFork(branch_id) => {
+                                let fork_id = self.tree.fork(branch_id)?.to_string();
+                                conn.writer.send_text(&fork_id)?;
+                            }
                             Command::Set(k, v) => {
                                 let trans = Transaction::Set(k, v);
-                                // self.tree.push(1, trans);
+                                self.tree.push(self.branch, trans)?;
+                                conn.writer.send_text("OK")?;
+                            }
+                            Command::Delete(k) => {
+                                let trans = Transaction::Delete(k);
+                                self.tree.push(self.branch, trans)?;
+                                conn.writer.send_text("OK")?;
                             }
                             _ => {
                                 println!("{:?}", cmd);
