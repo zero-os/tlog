@@ -20,6 +20,7 @@ where
     pub reader: Request<'a, T>,
     pub writer: Response<'a, T>,
 }
+
 impl<'a, T> Connection<'a, T>
 where
     &'a T: Read + Write,

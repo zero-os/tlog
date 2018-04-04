@@ -31,7 +31,7 @@ where
             let argc = line_iter
                 .next()
                 .and_then(|arg| atoi::<u8>(&[*arg]))
-                .ok_or(io::Error::new(io::ErrorKind::Other, "Malformed request"))?;
+                .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Malformed request"))?;
 
             let mut args: Vec<Vec<u8>> = Vec::new();
 
@@ -51,7 +51,7 @@ where
                         args.push(line);
                         Some(0)
                     })
-                    .ok_or(io::Error::new(io::ErrorKind::Other, "Malformed request"))?;
+                    .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Malformed request"))?;
             }
 
             match &args[0][..] {
@@ -119,28 +119,7 @@ where
     }
 }
 
-pub struct RequestIntoIterator<'a, 'b, T: 'a>
-where
-    &'a T: Read + Write,
-    'a: 'b,
-{
-    request: &'b mut Request<'a, T>,
-}
-
-impl<'a, 'b, T> IntoIterator for &'b mut Request<'a, T>
-where
-    &'a T: Read + Write,
-    'a: 'b,
-{
-    type Item = Command;
-    type IntoIter = RequestIntoIterator<'a, 'b, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        RequestIntoIterator { request: self }
-    }
-}
-
-impl<'a, 'b, T> Iterator for RequestIntoIterator<'a, 'b, T>
+impl<'a, 'b, T> Iterator for Request<'a, T>
 where
     &'a T: Read + Write,
     'a: 'b,
@@ -148,7 +127,7 @@ where
     type Item = Command;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.request.decode() {
+        match self.decode() {
             Ok(cmd) => {
                 return cmd;
             }

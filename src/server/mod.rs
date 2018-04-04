@@ -61,7 +61,7 @@ impl<'a> Server<'a> {
                 Ok(stream) => {
                     info!("accepted connection; addr={}", stream.peer_addr()?);
                     let mut conn = Connection::new(&stream);
-                    for cmd in conn.reader.into_iter() {
+                    for cmd in conn.reader {
                         match cmd {
                             Command::PING => {
                                 conn.writer.send_text("PONG")?;

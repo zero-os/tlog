@@ -21,7 +21,7 @@ where
         self.send(msg.as_bytes())
     }
 
-    pub fn send_transaction(&mut self, _transaction: Transaction) -> Result<()> {
+    pub fn send_transaction(&mut self, _transaction: &Transaction) -> Result<()> {
         Ok(())
     }
 
