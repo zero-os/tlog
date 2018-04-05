@@ -9,3 +9,4 @@ futures = "0.1"
 protobuf = "1.4"
 log = "0.4"
 tlog = { version = "0.1", path = "../tlog" }
+redis = "0.8"
