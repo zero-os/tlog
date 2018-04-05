@@ -11,13 +11,15 @@ use self::connection::Connection;
 #[derive(Debug)]
 pub enum Command {
     PING,
+    NamespaceNew,
+    Namespace(String),
     BranchNew,
     BranchFork(usize),
     Branch(usize),
     Set(Vec<u8>, Vec<u8>),
     Delete(Vec<u8>),
-    Replay(Vec<u8>),
-    NOTSUPPORTED,
+    Replay,
+    NotSupported,
 }
 
 /// TCP server that is responsible for managing the connections
@@ -74,15 +76,35 @@ impl<'a> Server<'a> {
                                 let fork_id = self.tree.fork(branch_id)?.to_string();
                                 conn.writer.send_text(&fork_id)?;
                             }
+                            Command::Branch(branch_id) => {
+                                self.branch = branch_id;
+                                // TODO: load branch
+                            }
                             Command::Set(k, v) => {
                                 let trans = Transaction::Set(k, v);
                                 self.tree.push(self.branch, trans)?;
                                 conn.writer.send_text("OK")?;
                             }
                             Command::Delete(k) => {
+                                // TODO: support deleteing multiple keys
                                 let trans = Transaction::Delete(k);
                                 self.tree.push(self.branch, trans)?;
-                                conn.writer.send_text("OK")?;
+                                conn.writer.send_text("1")?;
+                            }
+                            Command::Replay => {
+                                let mut empty = true;
+                                for transaction in self.tree.replay_all(self.branch) {
+                                    let transaction = transaction?;
+                                    conn.writer.send_transaction(&transaction)?;
+                                    empty = false;
+                                }
+
+                                if empty {
+                                    conn.writer.send_text("ERROR: could not do a replay")?;
+                                }
+                            }
+                            Command::NotSupported => {
+                                conn.writer.send_text("ERROR: command not supported")?;
                             }
                             _ => {
                                 println!("{:?}", cmd);

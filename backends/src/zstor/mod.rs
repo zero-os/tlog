@@ -30,7 +30,10 @@ impl Backend for Zstor {
         req.set_data(data);
         self.client
             .write(&req)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            .map_err(|err| {
+                error!("fetch error; {}", err);
+                io::Error::new(io::ErrorKind::Other, err)
+            })?;
         Ok(())
     }
 
@@ -39,7 +42,10 @@ impl Backend for Zstor {
         req.set_key(key);
         let resp = self.client
             .read(&req)
-            .map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+            .map_err(|err| {
+                error!("fetch error; {}", err);
+                io::Error::new(io::ErrorKind::Other, err)
+            })?;
         // TODO: check what zstor return if no data found
         Ok(Some(resp.data))
     }

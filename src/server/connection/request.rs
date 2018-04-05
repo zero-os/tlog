@@ -2,7 +2,6 @@ use super::Command;
 
 use std::io::prelude::*;
 use atoi::atoi;
-use hex;
 use std::io::{self, BufReader, Result};
 
 pub struct Request<'a, T: 'a>
@@ -57,38 +56,20 @@ where
             match &args[0][..] {
                 b"PING" => Ok(Some(Command::PING)),
                 b"SET" => {
+                    if args.len() < 3 {
+                        return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
+                    }
+                    Ok(Some(Command::Set(args.swap_remove(1), args.swap_remove(1))))
+                }
+                b"DEL" => {
                     if args.len() < 2 {
                         return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
                     }
-                    Ok(Some(Command::Set(args.swap_remove(1), args.swap_remove(2))))
+                    Ok(Some(Command::Delete(args.swap_remove(1))))
                 }
-                b"DELETE" => {
-                    if args.len() < 1 {
-                        return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
-                    }
+                b"REPLAY" => Ok(Some(Command::Replay)),
 
-                    let hash = match hex::decode(&args[1]) {
-                        Ok(hash) => hash,
-                        Err(_) => {
-                            return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
-                        }
-                    };
-                    Ok(Some(Command::Delete(hash)))
-                }
-                b"REPLAY" => {
-                    if args.len() < 1 {
-                        return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
-                    }
-
-                    let hash = match hex::decode(&args[1]) {
-                        Ok(hash) => hash,
-                        Err(_) => {
-                            return Err(io::Error::new(io::ErrorKind::Other, "Malformed request"));
-                        }
-                    };
-                    Ok(Some(Command::Replay(hash)))
-                }
-                _ => Ok(Some(Command::NOTSUPPORTED)),
+                _ => Ok(Some(Command::NotSupported)),
             }
         } else {
             Ok(None)

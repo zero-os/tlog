@@ -21,8 +21,38 @@ where
         self.send(msg.as_bytes())
     }
 
-    pub fn send_transaction(&mut self, _transaction: &Transaction) -> Result<()> {
-        Ok(())
+    pub fn send_transaction(&mut self, transaction: &Transaction) -> Result<()> {
+        let msg;
+        match transaction {
+            Transaction::Set(key, val) => {
+                let key_meta = format!("${}\r\n", key.len());
+                let val_meta = format!("${}\r\n", val.len());
+
+                let mut cmd: Vec<&[u8]> = vec![];
+
+                cmd.push(b"*3\r\n$3\r\nSET\r\n");
+                cmd.push(key_meta.as_bytes());
+                cmd.push(&key);
+                cmd.push(b"\r\n");
+                cmd.push(val_meta.as_bytes());
+                cmd.push(&val);
+                cmd.push(b"\r\n");
+                msg = cmd.concat();
+            }
+            Transaction::Delete(key) => {
+                let key_meta = format!("${}\r\n", key.len());
+
+                let mut cmd: Vec<&[u8]> = vec![];
+
+                cmd.push(b"*2\r\n$3\r\nDEL\r\n");
+                cmd.push(key_meta.as_bytes());
+                cmd.push(&key);
+                cmd.push(b"\r\n");
+
+                msg = cmd.concat();
+            }
+        };
+        self.send(&msg)
     }
 
     fn send(&mut self, payload: &[u8]) -> Result<()> {
