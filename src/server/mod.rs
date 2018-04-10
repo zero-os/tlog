@@ -66,15 +66,15 @@ impl<'a> Server<'a> {
                     for cmd in conn.reader {
                         match cmd {
                             Command::PING => {
-                                conn.writer.send_text("PONG")?;
+                                conn.writer.send_text("PONG");
                             }
                             Command::BranchNew => {
                                 let branch_id = self.tree.create_branch()?.to_string();
-                                conn.writer.send_text(&branch_id)?;
+                                conn.writer.send_text(&branch_id);
                             }
                             Command::BranchFork(branch_id) => {
                                 let fork_id = self.tree.fork(branch_id)?.to_string();
-                                conn.writer.send_text(&fork_id)?;
+                                conn.writer.send_text(&fork_id);
                             }
                             Command::Branch(branch_id) => {
                                 self.branch = branch_id;
@@ -83,28 +83,28 @@ impl<'a> Server<'a> {
                             Command::Set(k, v) => {
                                 let trans = Transaction::Set(k, v);
                                 self.tree.push(self.branch, trans)?;
-                                conn.writer.send_text("OK")?;
+                                conn.writer.send_text("OK");
                             }
                             Command::Delete(k) => {
                                 // TODO: support deleteing multiple keys
                                 let trans = Transaction::Delete(k);
                                 self.tree.push(self.branch, trans)?;
-                                conn.writer.send_text("1")?;
+                                conn.writer.send_text("1");
                             }
                             Command::Replay => {
                                 let mut empty = true;
                                 for transaction in self.tree.replay_all(self.branch) {
                                     let transaction = transaction?;
-                                    conn.writer.send_transaction(&transaction)?;
+                                    conn.writer.send_transaction(&transaction);
                                     empty = false;
                                 }
 
                                 if empty {
-                                    conn.writer.send_text("ERROR: could not do a replay")?;
+                                    conn.writer.send_text("ERROR: could not do a replay");
                                 }
                             }
                             Command::NotSupported => {
-                                conn.writer.send_text("ERROR: command not supported")?;
+                                conn.writer.send_text("ERROR: command not supported");
                             }
                             _ => {
                                 println!("{:?}", cmd);

@@ -16,12 +16,12 @@ where
         Response { writer }
     }
 
-    pub fn send_text(&mut self, text: &str) -> Result<()> {
+    pub fn send_text(&mut self, text: &str) {
         let msg = format!("+{}\r\n", text);
-        self.send(msg.as_bytes())
+        self.send(msg.as_bytes());
     }
 
-    pub fn send_transaction(&mut self, transaction: &Transaction) -> Result<()> {
+    pub fn send_transaction(&mut self, transaction: &Transaction) {
         let msg;
         match transaction {
             Transaction::Set(key, val) => {
@@ -52,11 +52,11 @@ where
                 msg = cmd.concat();
             }
         };
-        self.send(&msg)
+        self.send(&msg);
     }
 
-    fn send(&mut self, payload: &[u8]) -> Result<()> {
-        self.writer.write_all(payload)?;
-        self.writer.flush()
+    fn send(&mut self, payload: &[u8]) {
+        self.writer.write_all(payload).unwrap_or_else(|err| error!("error send; {}", err));
+        self.writer.flush().unwrap_or_else(|err| error!("error send; {}", err));
     }
 }
