@@ -1,8 +1,8 @@
 extern crate bincode;
 extern crate chrono;
-extern crate serde;
 #[macro_use]
 extern crate log;
+extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 
@@ -16,6 +16,7 @@ use bincode::{deserialize, serialize};
 use chrono::prelude::*;
 use std::io::{self, Result};
 use std::str;
+use std::collections::HashMap;
 
 pub trait Backend {
     /// pushes the data to the backend
@@ -26,12 +27,10 @@ pub trait Backend {
     /// gets the data associated with key provided from the backend
     ///
     /// `fetch` should handle how the data is fetched
+    ///
+    /// returns Ok(None) if key is not found
     fn fetch(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>>;
 }
-
-// TODO: open an issue if the implementation was still as described below
-// TODO: for the moment the metadata is updated on every transaction log push (makes 2 request for a single push)
-// TODO: update it every a constant number of transaction, every interval of time, or on an event
 
 /// Payload is representation of supported commands
 ///
@@ -76,13 +75,13 @@ impl Node {
 /// Branch metadata
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 struct Metadata {
-    id: u64,
+    id: i64,
     head: u64,
     tail: u64,
 }
 
 impl Metadata {
-    fn new(id: u64, head: u64, tail: u64) -> Self {
+    fn new(id: i64, head: u64, tail: u64) -> Self {
         Metadata { id, head, tail }
     }
 }
@@ -92,21 +91,21 @@ impl Metadata {
 /// it contains the associated metadata to validate and fast unwind the logs
 #[derive(Serialize, Deserialize, Debug)]
 struct Branch {
-    metadata: Option<Metadata>,
+    metadata: Metadata,
     parent_metadata: Option<Metadata>,
 }
 
 impl Branch {
     fn new() -> Self {
         Self {
-            metadata: None,
+            metadata: Metadata::new(-1, 0, 0),
             parent_metadata: None,
         }
     }
 
     fn create_with_parent(parent_metadata: Metadata) -> Self {
         Self {
-            metadata: None,
+            metadata: Metadata::new(-1, 0, 0),
             parent_metadata: Some(parent_metadata),
         }
     }
@@ -116,7 +115,7 @@ pub struct Tree<'a, T> {
     namespace: &'a str,
     backend: T,
     // branches's hashmap format: { branch_id(seq): Branch }
-    branches: Vec<Branch>,
+    branches: HashMap<usize, Branch>,
 }
 
 pub struct ChainIter<'a, T: 'a>
@@ -179,7 +178,7 @@ impl<'a, T> Tree<'a, T> {
         Tree {
             namespace,
             backend,
-            branches: Vec::new(),
+            branches: HashMap::new(),
         }
     }
 }
@@ -189,6 +188,64 @@ impl<'a, T> Tree<'a, T>
 where
     T: Backend,
 {
+    fn update_tail(&mut self, metadata: &mut Metadata) -> Result<()> {
+        metadata.head = 1;
+        let variant = 10;
+        metadata.tail += variant;
+        let node_key = format!("{}.{}.{}", self.namespace, metadata.id, metadata.tail);
+
+        let result = self.backend.fetch(node_key.as_bytes().to_vec())?;
+
+        if let Some(_) = result {
+            self.update_tail(metadata)?;
+        } else {
+            let mut first = metadata.tail - variant + 1;
+            let mut last = metadata.tail;
+
+            while first <= last {
+                let mut middle = (first + last) / 2;
+                let node_key = format!("{}.{}.{}", self.namespace, metadata.id, middle);
+                let result = self.backend.fetch(node_key.as_bytes().to_vec())?;
+
+                if let Some(_) = result {
+                    first = middle + 1;
+                    metadata.tail = middle;
+                } else {
+                    last = middle - 1;
+                }
+            }
+            if last == 0 {
+                metadata.head = 0;
+                metadata.tail = 0;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn load_branch(&mut self, branch_id: usize) -> Result<()> {
+        let branch_key = format!("{}.{}", self.namespace, branch_id);
+        let result = self.backend.fetch(branch_key.as_bytes().to_vec())?;
+
+        if let Some(branch) = result {
+            let mut deserialized_branch: Branch =
+                deserialize(&branch).map_err(|err| io::Error::new(io::ErrorKind::Other, err))?;
+
+            deserialized_branch.metadata.id = branch_id as i64;
+            self.update_tail(&mut deserialized_branch.metadata)?;
+
+            if let Some(ref parent_metadata) = deserialized_branch.parent_metadata {
+                self.load_branch(parent_metadata.id as usize)?;
+            }
+
+            self.branches.insert(branch_id, deserialized_branch);
+
+            Ok(())
+        } else {
+            let msg = format!("branch {}, is not found", branch_id);
+            Err(io::Error::new(io::ErrorKind::NotFound, msg))
+        }
+    }
 
     pub fn branch_exists(&self, branch_id: usize) -> bool {
         self.branches.len() > branch_id
@@ -206,7 +263,7 @@ where
         let new_branch = Branch::new();
 
         self.save_branch(new_branch_id, &new_branch)?;
-        self.branches.push(new_branch);
+        self.branches.insert(new_branch_id, new_branch);
 
         Ok(new_branch_id)
     }
@@ -215,7 +272,7 @@ where
     ///
     /// return branch id
     pub fn fork(&mut self, parent_id: usize) -> Result<usize> {
-        let parent_branch_metadata = match self.branches.get(parent_id) {
+        let parent_branch_metadata = match self.branches.get(&parent_id) {
             Some(branch) => branch.metadata.clone(),
             None => {
                 let msg = format!("parent branch {} is not found", parent_id);
@@ -225,11 +282,11 @@ where
 
         // create a fork form the parent only if the parent is not root
         // otherwise just create another root branch
-        if let Some(parent_branch_metadata) = parent_branch_metadata {
+        if parent_branch_metadata.id != -1 {
             let new_branch_id = self.next_branch();
             let new_branch = Branch::create_with_parent(parent_branch_metadata);
             self.save_branch(new_branch_id, &new_branch)?;
-            self.branches.push(new_branch);
+            self.branches.insert(new_branch_id, new_branch);
             Ok(new_branch_id)
         } else {
             self.create_branch()
@@ -259,16 +316,17 @@ where
     /// calculate the transaction log chain recursively in a descending order
     /// which will help in replaying whole chain of the branch
     ///
-    /// for example if a branch doesn't have any parent the return would be `vec![(branch_key, length)]`
-    /// but if it has a parent branch the return will include the branch key and tail of the parent and so on
+    /// for example if a branch doesn't have any parent the return would be
+    /// `vec![(branch_key, length)]` but if it has a parent branch
+    /// the return will include the branch key and tail of the parent and so on
     /// `vec![(branch_key, length), (parent_branch_key, length)]`
     fn get_chain_points(&self, branch_id: usize) -> Vec<(String, usize)> {
         let mut chain_points = vec![];
-        let branch = &self.branches[branch_id];
+        let branch = &self.branches[&branch_id];
 
-        if let Some(metadata) = &branch.metadata {
+        if branch.metadata.id != -1 {
             let branch_key = format!("{}.{}", self.namespace, branch_id);
-            let tail_key = metadata.tail as usize;
+            let tail_key = branch.metadata.tail as usize;
             chain_points.push((branch_key, tail_key));
 
             if let Some(parent_metadata) = &branch.parent_metadata {
@@ -290,18 +348,22 @@ where
         let mut node_id = format!("{}.{}", self.namespace, branch_id);
 
         // check if branch is already created
-        if let Some(ref mut branch) = self.branches.get_mut(branch_id) {
+        if let Some(ref mut branch) = self.branches.get_mut(&branch_id) {
             // initialize branch if it's the first node in the branch
-            if let Some(ref mut branch_metadata) = branch.metadata {
-                node.set_parent(self.namespace, branch_id as u64, branch_metadata.tail);
-                branch_metadata.tail += 1;
-                node_id = format!("{}.{}", node_id, branch_metadata.tail);
+            if branch.metadata.id != -1 {
+                node.set_parent(self.namespace, branch_id as u64, branch.metadata.tail);
+                branch.metadata.tail += 1;
+                node_id = format!("{}.{}", node_id, branch.metadata.tail);
             } else {
                 trace!("branch {} is empty", branch_id);
                 if let Some(ref parent_metadata) = branch.parent_metadata {
-                    node.set_parent(self.namespace, parent_metadata.id, parent_metadata.tail);
+                    node.set_parent(
+                        self.namespace,
+                        parent_metadata.id as u64,
+                        parent_metadata.tail,
+                    );
                 }
-                branch.metadata = Some(Metadata::new(branch_id as u64, 1, 1));
+                branch.metadata = Metadata::new(branch_id as i64, 1, 1);
                 node_id = format!("{}.{}", node_id, 1);
             }
 
@@ -367,7 +429,7 @@ mod tests {
 
         let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
         assert!(
-            tlog_tree.branches[forked_branch_id]
+            tlog_tree.branches[&forked_branch_id]
                 .parent_metadata
                 .is_none()
         );
@@ -399,7 +461,7 @@ mod tests {
 
         let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
 
-        let parent_metadata = &tlog_tree.branches[forked_branch_id].parent_metadata;
+        let parent_metadata = &tlog_tree.branches[&forked_branch_id].parent_metadata;
         assert!(parent_metadata.is_some());
         assert_eq!(parent_metadata.clone().unwrap().head, 1);
         assert_eq!(parent_metadata.clone().unwrap().tail, 2);
@@ -416,10 +478,10 @@ mod tests {
         let transaction = Transaction::Set(b"hello".to_vec(), b"world".to_vec());
         tlog_tree.push(branch_id, transaction).unwrap();
 
-        let branch_metadata = &tlog_tree.branches[branch_id].metadata;
-        assert!(branch_metadata.is_some());
-        assert_eq!(branch_metadata.clone().unwrap().head, 1);
-        assert_eq!(branch_metadata.clone().unwrap().tail, 1);
+        let branch_metadata = &tlog_tree.branches[&branch_id].metadata;
+        assert!(branch_metadata.id != -1);
+        assert_eq!(branch_metadata.head, 1);
+        assert_eq!(branch_metadata.tail, 1);
     }
 
     #[test]
@@ -437,10 +499,10 @@ mod tests {
         tlog_tree.push(branch_id, transaction2).unwrap();
         tlog_tree.push(branch_id, transaction3).unwrap();
 
-        let branch_metadata = &tlog_tree.branches[branch_id].metadata;
-        assert!(branch_metadata.is_some());
-        assert_eq!(branch_metadata.clone().unwrap().head, 1);
-        assert_eq!(branch_metadata.clone().unwrap().tail, 3);
+        let branch_metadata = &tlog_tree.branches[&branch_id].metadata;
+        assert!(branch_metadata.id != -1);
+        assert_eq!(branch_metadata.head, 1);
+        assert_eq!(branch_metadata.tail, 3);
     }
 
     #[test]
@@ -540,6 +602,66 @@ mod tests {
         for (idx, x) in tlog_tree.replay_all(forked_branch_id).enumerate() {
             assert_eq!(x.unwrap(), transaction_chain[idx]);
         }
+    }
+
+    #[test]
+    fn load_root_branch() {
+        let namespace = "default";
+
+        let backend: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut tlog_tree = Tree::new(namespace, backend);
+        let branch_id = tlog_tree.create_branch().unwrap();
+
+        let transaction = Transaction::Set(b"hello1".to_vec(), b"world1".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set(b"hello2".to_vec(), b"world2".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set(b"hello3".to_vec(), b"world3".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+
+        tlog_tree.branches = HashMap::new();
+        tlog_tree.load_branch(branch_id).unwrap();
+        assert_eq!(tlog_tree.branches[&branch_id].metadata.tail, 3);
+    }
+
+    #[test]
+    fn load_forked_branch() {
+        let namespace = "default";
+
+        let backend: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut tlog_tree = Tree::new(namespace, backend);
+        let branch_id = tlog_tree.create_branch().unwrap();
+
+        let transaction = Transaction::Set(b"hello1".to_vec(), b"world1".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set(b"hello2".to_vec(), b"world2".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+        let transaction = Transaction::Set(b"hello3".to_vec(), b"world3".to_vec());
+        tlog_tree.push(branch_id, transaction).unwrap();
+
+        let forked_branch_id = tlog_tree.fork(branch_id).unwrap();
+        let transaction = Transaction::Set(b"hello4".to_vec(), b"world4".to_vec());
+        tlog_tree.push(forked_branch_id, transaction).unwrap();
+        let transaction = Transaction::Set(b"hello5".to_vec(), b"world5".to_vec());
+        tlog_tree.push(forked_branch_id, transaction).unwrap();
+
+        tlog_tree.branches = HashMap::new();
+        tlog_tree.load_branch(forked_branch_id).unwrap();
+        assert_eq!(tlog_tree.branches[&branch_id].metadata.tail, 3);
+        assert_eq!(tlog_tree.branches[&forked_branch_id].metadata.tail, 2);
+    }
+
+    #[test]
+    fn load_empty_branch() {
+        let namespace = "default";
+
+        let backend: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        let mut tlog_tree = Tree::new(namespace, backend);
+        let branch_id = tlog_tree.create_branch().unwrap();
+
+        tlog_tree.branches = HashMap::new();
+        tlog_tree.load_branch(branch_id).unwrap();
+        assert_eq!(tlog_tree.branches[&branch_id].metadata.tail, 0);
     }
 
     #[test]
