@@ -24,7 +24,7 @@ where
     pub fn send_transaction(&mut self, transaction: &Transaction) {
         let msg;
         match transaction {
-            Transaction::Set(key, val) => {
+            &Transaction::Set(ref key, ref val) => {
                 let key_meta = format!("${}\r\n", key.len());
                 let val_meta = format!("${}\r\n", val.len());
 
@@ -32,21 +32,21 @@ where
 
                 cmd.push(b"*3\r\n$3\r\nSET\r\n");
                 cmd.push(key_meta.as_bytes());
-                cmd.push(key);
+                cmd.push(&key);
                 cmd.push(b"\r\n");
                 cmd.push(val_meta.as_bytes());
-                cmd.push(val);
+                cmd.push(&val);
                 cmd.push(b"\r\n");
                 msg = cmd.concat();
             }
-            Transaction::Delete(key) => {
+            &Transaction::Delete(ref key) => {
                 let key_meta = format!("${}\r\n", key.len());
 
                 let mut cmd: Vec<&[u8]> = vec![];
 
                 cmd.push(b"*2\r\n$3\r\nDEL\r\n");
                 cmd.push(key_meta.as_bytes());
-                cmd.push(key);
+                cmd.push(&key);
                 cmd.push(b"\r\n");
 
                 msg = cmd.concat();

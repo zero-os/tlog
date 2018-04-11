@@ -159,14 +159,14 @@ where
     /// and hence all nodes from the start till the tail of first branch (1 -> tail) will be retrieved and so on
     fn next(&mut self) -> Option<Self::Item> {
         if self.branch_index < self.chain_points.len() {
-            let (branch_key, length) = &self.chain_points[self.branch_index];
-            if self.node_index <= *length {
+            let &(ref branch_key, length) = &self.chain_points[self.branch_index];
+            if self.node_index <= length {
                 let node_key = format!("{}.{}", branch_key, self.node_index);
                 trace!("Replay: fetching {}", node_key);
                 let node = self.tree.backend.fetch(node_key.into_bytes()).ok()??;
                 let deserialized_transaction: Transaction = deserialize(&node).ok()?;
 
-                if self.node_index == *length {
+                if self.node_index == length {
                     self.branch_index += 1;
                     self.node_index = 0;
                 }
@@ -345,7 +345,7 @@ where
             let tail_key = branch.metadata.tail as usize;
             chain_points.push((branch_key, tail_key));
 
-            if let Some(parent_metadata) = &branch.parent_metadata {
+            if let Some(ref parent_metadata) = branch.parent_metadata {
                 let mut parent_chain_points = self.get_chain_points(parent_metadata.id as usize);
                 chain_points.append(&mut parent_chain_points);
             }
