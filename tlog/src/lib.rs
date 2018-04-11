@@ -123,9 +123,9 @@ where
     T: Backend,
 {
     tree: &'a Tree<'a, T>,
-    branch_id: usize,
     node_index: usize,
     branch_index: usize,
+    chain_path: Vec<(String, usize)>,
 }
 
 impl<'a, T> ChainIter<'a, T>
@@ -133,11 +133,14 @@ where
     T: Backend,
 {
     fn new(tree: &'a Tree<'a, T>, branch_id: usize) -> Self {
+        let mut chain_path = tree.get_chain_points(branch_id);
+        chain_path.reverse();
+
         Self {
             tree,
-            branch_id,
             node_index: 1,
             branch_index: 0,
+            chain_path,
         }
     }
 }
@@ -149,11 +152,8 @@ where
     type Item = Result<Transaction>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut chain_points = self.tree.get_chain_points(self.branch_id);
-        chain_points.reverse();
-
-        if self.branch_index < chain_points.len() {
-            let (branch_key, length) = &chain_points[self.branch_index];
+        if self.branch_index < self.chain_path.len() {
+            let (branch_key, length) = &self.chain_path[self.branch_index];
             if self.node_index <= *length {
                 let node_key = format!("{}.{}", branch_key, self.node_index);
                 trace!("Replay: fetching {}", node_key);
@@ -213,6 +213,8 @@ where
                     last = middle - 1;
                 }
             }
+
+            // return empty metadata if the branch is empty
             if last == 0 {
                 metadata.head = 0;
                 metadata.tail = 0;
@@ -337,18 +339,14 @@ where
         chain_points
     }
 
-    // TODO: use timestamp as the key (if needed)
-    // TODO: return empty result
-    /// stores the provided node in the backend
-    ///
-    /// returns node id
+    /// adds the provided transaction to the specified branch in the tree
     pub fn push(&mut self, branch_id: usize, transaction: Transaction) -> Result<()> {
         let mut node = Node::new(transaction);
         let mut node_id = format!("{}.{}", self.namespace, branch_id);
 
         // check if branch is already created
         if let Some(ref mut branch) = self.branches.get_mut(&branch_id) {
-            // initialize branch if it's the first node in the branch
+            // initialize branch if it's not the first node in the branch
             if branch.metadata.id != -1 {
                 node.set_parent(self.namespace, branch_id as u64, branch.metadata.tail);
                 branch.metadata.tail += 1;
@@ -373,7 +371,7 @@ where
             Ok(())
         } else {
             let msg = format!("Branch {} is not found", branch_id);
-            Err(io::Error::new(io::ErrorKind::Other, msg))
+            Err(io::Error::new(io::ErrorKind::NotFound, msg))
         }
     }
 

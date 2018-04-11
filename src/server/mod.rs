@@ -79,7 +79,7 @@ impl<'a> Server<'a> {
                             }
                             Command::Branch(branch_id) => {
                                 self.branch = branch_id;
-                                tree.load_branch(branch).unwrap();
+                                self.tree.load_branch(branch_id).unwrap();
                             }
                             Command::Set(k, v) => {
                                 let trans = Transaction::Set(k, v);
