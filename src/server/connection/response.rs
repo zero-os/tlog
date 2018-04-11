@@ -32,10 +32,10 @@ where
 
                 cmd.push(b"*3\r\n$3\r\nSET\r\n");
                 cmd.push(key_meta.as_bytes());
-                cmd.push(&key);
+                cmd.push(key);
                 cmd.push(b"\r\n");
                 cmd.push(val_meta.as_bytes());
-                cmd.push(&val);
+                cmd.push(val);
                 cmd.push(b"\r\n");
                 msg = cmd.concat();
             }
@@ -46,7 +46,7 @@ where
 
                 cmd.push(b"*2\r\n$3\r\nDEL\r\n");
                 cmd.push(key_meta.as_bytes());
-                cmd.push(&key);
+                cmd.push(key);
                 cmd.push(b"\r\n");
 
                 msg = cmd.concat();

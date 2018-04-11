@@ -1,0 +1,25 @@
+language: rust
+sudo: false
+
+cache: cargo
+
+os:
+  - linux
+  - osx
+
+rust:
+  - stable
+
+env:
+  - FEATURES="clippy"
+  - FEATURES=""
+
+matrix:
+  fast_finish: true
+  exclude:
+    - rust: stable
+      env: FEATURES="clippy"
+
+script:
+- cargo test -p tlog
+- cargo build
