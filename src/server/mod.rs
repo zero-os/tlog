@@ -41,9 +41,10 @@ impl<'a> Server<'a> {
 
         if branch != 0 && !tree.branch_exists(branch) {
             panic!("branch {} does not exist", branch);
-        } else {
+        } else if !tree.branch_exists(branch) {
             tree.create_branch().unwrap();
         }
+        tree.load_branch(branch).unwrap();
         info!("branches: loading branch {}", branch);
 
         Server {
@@ -78,7 +79,7 @@ impl<'a> Server<'a> {
                             }
                             Command::Branch(branch_id) => {
                                 self.branch = branch_id;
-                                // TODO: load branch
+                                tree.load_branch(branch).unwrap();
                             }
                             Command::Set(k, v) => {
                                 let trans = Transaction::Set(k, v);

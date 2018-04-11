@@ -40,13 +40,20 @@ impl Backend for Zstor {
     fn fetch(&self, key: Vec<u8>) -> Result<Option<Vec<u8>>> {
         let mut req = model::ReadRequest::new();
         req.set_key(key);
-        let resp = self.client
-            .read(&req)
-            .map_err(|err| {
-                error!("fetch error; {}", err);
-                io::Error::new(io::ErrorKind::Other, err)
-            })?;
-        // TODO: check what zstor return if no data found
-        Ok(Some(resp.data))
+        let resp = self.client.read(&req);
+
+        let resp = match resp {
+            Ok(resp) => Ok(Some(resp.data)),
+            Err(error) => {
+                if error.to_string().contains("daemon: key is no found") {
+                    Ok(None)
+                } else {
+                    error!("fetch error; {}", error);
+                    Err(io::Error::new(io::ErrorKind::Other, error))
+                }
+            },
+        };
+
+        resp
     }
 }

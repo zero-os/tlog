@@ -193,7 +193,6 @@ where
         let variant = 10;
         metadata.tail += variant;
         let node_key = format!("{}.{}.{}", self.namespace, metadata.id, metadata.tail);
-
         let result = self.backend.fetch(node_key.as_bytes().to_vec())?;
 
         if let Some(_) = result {

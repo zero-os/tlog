@@ -1,4 +1,4 @@
-use std::io::{BufWriter, Result, Write};
+use std::io::{BufWriter, Write};
 use tlog::Transaction;
 
 pub struct Response<'a, T: 'a>
