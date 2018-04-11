@@ -1,0 +1,12 @@
+[package]
+name = "tlog"
+version = "0.1.0"
+authors = ["Khaled Karam <khaledkbadr@outlook.com>"]
+
+[dependencies]
+chrono = "0.4"
+log = "0.4"
+bincode = "1.0"
+serde_derive = "1.0"
+serde = "1.0"
+failure = "0.1"
