@@ -207,18 +207,19 @@ where
         let node_key = format!("{}.{}.{}", self.namespace, metadata.id, metadata.tail);
         let result = self.backend.fetch(node_key.as_bytes().to_vec())?;
 
-        if let Some(_) = result {
+        if result.is_some() {
             self.update_tail(metadata)?;
         } else {
             let mut first = metadata.tail - variant + 1;
             let mut last = metadata.tail;
 
+            let mut middle;
             while first <= last {
-                let mut middle = (first + last) / 2;
+                middle = (first + last) / 2;
                 let node_key = format!("{}.{}.{}", self.namespace, metadata.id, middle);
                 let result = self.backend.fetch(node_key.as_bytes().to_vec())?;
 
-                if let Some(_) = result {
+                if result.is_some() {
                     first = middle + 1;
                     metadata.tail = middle;
                 } else {

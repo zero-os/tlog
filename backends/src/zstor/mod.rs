@@ -42,7 +42,7 @@ impl Backend for Zstor {
         req.set_key(key);
         let resp = self.client.read(&req);
 
-        let resp = match resp {
+        match resp {
             Ok(resp) => Ok(Some(resp.data)),
             Err(error) => {
                 if error.to_string().contains("daemon: key is no found") {
@@ -52,8 +52,6 @@ impl Backend for Zstor {
                     Err(io::Error::new(io::ErrorKind::Other, error))
                 }
             },
-        };
-
-        resp
+        }
     }
 }
