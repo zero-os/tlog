@@ -1,6 +1,6 @@
 # Tlog
 
-tlog is a fast & efficient redis protocol based transaction log server
+tlog is a fast & efficient redis protocol based transaction log server to store operations taken place on any storage solution
 
 
 # Implementation

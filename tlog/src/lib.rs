@@ -66,6 +66,7 @@ impl Node {
         }
     }
 
+    /// add parent id to the node
     fn set_parent(&mut self, namespace: &str, branch: u64, parent: u64) {
         let parent_id = format!("{}.{}.{}", namespace, branch, parent);
         self.parent = Some(parent_id.into_bytes());
@@ -114,7 +115,7 @@ impl Branch {
 pub struct Tree<'a, T> {
     namespace: &'a str,
     backend: T,
-    // branches's hashmap format: { branch_id(seq): Branch }
+    // branches's hashmap format: { branch_id: Branch }
     branches: HashMap<usize, Branch>,
 }
 
@@ -125,22 +126,23 @@ where
     tree: &'a Tree<'a, T>,
     node_index: usize,
     branch_index: usize,
-    chain_path: Vec<(String, usize)>,
+    chain_points: Vec<(String, usize)>,
 }
 
 impl<'a, T> ChainIter<'a, T>
 where
     T: Backend,
 {
+    /// create an iterator of the chain path to be retrieved
     fn new(tree: &'a Tree<'a, T>, branch_id: usize) -> Self {
-        let mut chain_path = tree.get_chain_points(branch_id);
-        chain_path.reverse();
+        let mut chain_points = tree.get_chain_points(branch_id);
+        chain_points.reverse();
 
         Self {
             tree,
             node_index: 1,
             branch_index: 0,
-            chain_path,
+            chain_points,
         }
     }
 }
@@ -151,9 +153,13 @@ where
 {
     type Item = Result<Transaction>;
 
+    /// iterates over `self.chain_points` and fetch the required transaction
+    ///
+    /// `self.chain_points` has the length of each branch in the chain,
+    /// and hence all nodes from the start till the tail of first branch (1 -> tail) will be retrieved and so on
     fn next(&mut self) -> Option<Self::Item> {
-        if self.branch_index < self.chain_path.len() {
-            let (branch_key, length) = &self.chain_path[self.branch_index];
+        if self.branch_index < self.chain_points.len() {
+            let (branch_key, length) = &self.chain_points[self.branch_index];
             if self.node_index <= *length {
                 let node_key = format!("{}.{}", branch_key, self.node_index);
                 trace!("Replay: fetching {}", node_key);
@@ -188,6 +194,12 @@ impl<'a, T> Tree<'a, T>
 where
     T: Backend,
 {
+    /// update the `metadata.tail` to the latest version
+    ///
+    /// `metadata.tail + variant` is fetched continuously until None is returned
+    /// once that happens, it means that we passed the tail.
+    ///
+    /// After that a binary search will take place to fetch the exact tail value
     fn update_tail(&mut self, metadata: &mut Metadata) -> Result<()> {
         metadata.head = 1;
         let variant = 10;
@@ -224,6 +236,7 @@ where
         Ok(())
     }
 
+    /// Load branch from the backend into `self.branches`
     pub fn load_branch(&mut self, branch_id: usize) -> Result<()> {
         let branch_key = format!("{}.{}", self.namespace, branch_id);
         let result = self.backend.fetch(branch_key.as_bytes().to_vec())?;
@@ -239,6 +252,7 @@ where
                 self.load_branch(parent_metadata.id as usize)?;
             }
 
+            self.save_branch(branch_id, &deserialized_branch)?;
             self.branches.insert(branch_id, deserialized_branch);
 
             Ok(())
