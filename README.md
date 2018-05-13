@@ -1,66 +1,58 @@
-# Tlog
+## Specs
 
-tlog is a fast & efficient redis protocol based transaction log server to store operations taken place on any storage solution
+![specs.png](docs/assets/specs.png)
 
+## Main components
 
-# Implementation
+**Tlog server**
 
-A very simplified redis protocol is supported, allowing only few commands. [see below](#supported-redis-commands).
+- `global config object` :: contains global configuration for TLOG server
+- `Namespaces` :: a dictionary mapping a name to a namespace object
+- `Backend connection pool` :: get a connection to backend to flush data
 
-The transactions are stored in the backend as a `tree` which is serialized using a binary zero-fluff encoding scheme.
-
-We utilize Rust Trait system to implement the backend as a pluggable component but [0-stor](https://github.com/zero-os/0-stor) is the focus of this server. The server connects to a `0-stor` daemon using `grpc` which is achieved by using [grpc-rs](https://github.com/pingcap/grpc-rs) crate.
-
-# Project layout
-
-We choose to separate the server, transaction log logic, and backend into separate crates which provides us with flexibility to make any component pluggable, along with the ability to publish the logic as a separate crate to be used by the community.
-
-The `tlog-server` crate, found at the root, is primarily the server that glues the sub crates together and implements the redis protocol.
-
-The crates included as part of tlog-server are:
-
-* tlog: the tlog crate contains the whole logic on which the `tlog-server` is built. For more info, check tlog's [README](./tlog/README.md)
-* backends: backend representations to be used by `tlog` crate
-
-# Supported redis commands
-
-tlog will support the below commands:
-
-* `PING`
-* `SET key value`
-* `DEL key`
-* `REPLAY` replay the whole transaction log in acending order
-
-# Installation
-
-## Prerequisites
-
-1. Tlog requires the most recent stable Rust compiler; it can be installed with
-   `rustup`.
-
-### Installing Rust compiler with `rustup`
-
-1. Install [`rustup.rs`](https://rustup.rs/).
-
-2. Clone the source code:
-
-   ```sh
-   git clone https://github.com/zero-os/tlog.git
-   cd tlog
-   ```
-
-3. Make sure you have the right Rust compiler installed. Run
-
-   ```sh
-   rustup override set stable
-   rustup update stable
-   ```
+**namespace**
+- `configuration object` has access to global TLOG server configuration
+- `Data buffer` object :: Time stamping incoming data and buffeing them for flush in a local queue
+- `Metadata buffer` :: Metadata store, allowing fast replay between 2 time spans
+- `Metadata cleaner` :: Async routine cleaning meta data older than specific age and may flush them into d
+- `flusher` :: Async routine to flushes data to backend and saves metadata into `Metadata buffer`
 
 
-## Building
+**Data buffer**
 
-```sh
-cargo build --release
-```
+We don't want to block writing to a namespace buffer, so we follow the following design
 
-If all goes well, this should place a binary at `target/release/tlog-server`.
+- when a name space is created, we  allocate an array of size = `max_size_before_flush`, we call it `current_buffer`
+- once write operations start on `current_buffer` we allocate another buffer called `spare_buffer` of size =  `max_size_before_flush`
+- once `current_buffer` is full, we make `current_buffer` = `spare_buffer`
+- we append a reference to old buffer to a local queue (per namespace)
+- once write operations starts on `current_buffer` we make sure again we create a new `spare_buffer` of size =`max_size_before_flush` and so on
+- local queue will be dequeued later by an async routine (one per namespace)
+- buffered data format :: `[Header: timestamp][Actual data]`
+
+**Flusher**
+- we have an async routing per name space to dequeue data, flush into backend then save metadata into `Metadata buffer`
+
+**Metadata Store**
+
+- we want to save metadata into a data structure that allows for fast replay between a time span
+and in same time allowing us to go back and forth between data
+- we don't want to use a lnked list because it is slow (slower than iterating over array of fixed size)
+- we use the following algorithm
+    ```
+    current_index = -1
+    starting_index = 0
+    md = {}
+    ```
+
+    - we use a dictionary to hold metadata
+    - keys of dictionary are integers (sequential)
+    - when adding a new key, we increment `current_index` variable and use it as a key
+    - values look like : `[Header: timestamp][Actual data]`
+    - when cleaning metadata older than certain age, we set `starting_index` to the new starting index in dictionary
+now any furhter future cleaning operations can know which index to start at. also any searching operation can know which index
+to start at
+    - For searching for starting time span we try random dictionary index > `starting_index` and < `current_index` and see if value has epoch thT matche the beginning of time span we want
+and if not, we can use binary search through the indeCES to get the right data
+
+
