@@ -1,0 +1,16 @@
+{
+  "max_size_b4_flush": 64,
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6389
+  },
+
+  "metadata":{
+    "max_age_in_days": 10
+  },
+
+  "backend": "0-store",
+  "namespace": {
+
+  }
+}

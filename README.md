@@ -56,3 +56,6 @@ to start at
 and if not, we can use binary search through the indeCES to get the right data
 
 
+## Installation
+`go get github.com/docker/go-redis-server`
+`go run main.go`
