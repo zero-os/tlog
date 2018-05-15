@@ -1,6 +1,9 @@
 package server
 
-import "tlog/backends"
+import (
+	"tlog/backends"
+	"tlog/config"
+)
 
 type Namespace struct {
 	Queue *Queue
@@ -25,10 +28,11 @@ func (ns *Namespace) cleaner(){
 
 func NewNameSpace() (*Namespace){
 
+	var c = &config.NamespaceConfig{config.Config{}}
+
 	return &Namespace{
 		Queue: &Queue{},
-		Data: &Data{},
-		MetaData: &MetaData{},
+		Data: &Data{Config: c},
+		MetaData: &MetaData{c,},
 	}
-
 }

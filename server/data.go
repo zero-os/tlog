@@ -10,7 +10,7 @@ import (
 )
 
 type Data struct {
-	Config      *config.Config
+	Config      *config.NamespaceConfig
 	mainBuffer  bytes.Buffer
 	flushBuffer bytes.Buffer
 }
