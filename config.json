@@ -1,5 +1,5 @@
 {
-  "max_size_b4_flush": 64,
+  "max_size_b_4_flush": 100000,
   "redis": {
     "host": "127.0.0.1",
     "port": 6389

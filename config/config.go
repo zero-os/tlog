@@ -23,13 +23,12 @@ type Namespace struct {
 
 // Global config
 type Config struct {
-	MaxSizeB4Flush int16 `json: max_size_b4F_fush`;
-	Redis Redis;
-	Backend string`json: backend`
+	MaxSizeB4Flush int `json:"max_size_b_4_flush"`
+	Redis Redis
+	Backend string `json: backend`
 	MetaData MetaData
 	Namespace Namespace
 }
-
 
 // Load global config from config.json file
 func Load() (Config, error) {
@@ -43,6 +42,8 @@ func Load() (Config, error) {
 	}
 
 	json.NewDecoder(f).Decode(&config)
+
+
 
 	return config, nil
 }

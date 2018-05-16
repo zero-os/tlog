@@ -6,6 +6,7 @@ import (
 )
 
 type Namespace struct {
+	Name string
 	Queue *Queue
 	Data *Data
 	MetaData *MetaData
@@ -25,14 +26,15 @@ func (ns *Namespace) cleaner(){
 
 }
 
+func (ns *Namespace) write(data[]byte) error{
+	return ns.Data.write(data)
 
-func NewNameSpace() (*Namespace){
+}
 
-	var c = &config.NamespaceConfig{config.Config{}}
-
-	return &Namespace{
-		Queue: &Queue{},
-		Data: &Data{Config: c},
-		MetaData: &MetaData{c,},
-	}
+func (ns *Namespace) init(name string, globalConfig config.Config){
+	var c = &config.NamespaceConfig{globalConfig}
+	ns.Name = name
+	ns.Queue = &Queue{}
+	ns.Data = &Data{Config: c}
+	ns.MetaData = &MetaData{Config: c}
 }

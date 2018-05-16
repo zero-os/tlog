@@ -2,13 +2,14 @@ package server
 
 import "tlog/config"
 
+
 type MetaData struct {
 	Config *config.NamespaceConfig
+	MD map[int8]map[int8]map[int8]map[int8][]byte
 
 }
 
-func NewMetaData() *MetaData{
-	return &MetaData{
 
-	}
+func(md *MetaData) insert(){
+
 }

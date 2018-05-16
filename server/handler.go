@@ -11,5 +11,6 @@ func (h *Handler) Replay(key string, start string, end string)([]byte, error) {
 
 
 func (h *Handler) SET(key string, value []byte) error {
-	return nil
+	ns := h.TLog.GetOrCreateNameSpace(key)
+	return ns.write(value)
 }

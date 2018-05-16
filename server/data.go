@@ -17,7 +17,8 @@ type Data struct {
 
 func (d *Data) write(data []byte) error {
 
-	maxBuf := int(d.Config.MaxSizeB4Flush)
+	maxBuf := int(d.Config.Global.MaxSizeB4Flush)
+	fmt.Println(len(data), maxBuf)
 	if len(data)+10 > maxBuf {
 		return errors.New("Data length cannot be greater than max length before flush -10")
 	}
@@ -42,8 +43,4 @@ func (d *Data) write(data []byte) error {
 
 func (d *Data) flush() {
 	fmt.Println("Flushing: ", d.flushBuffer.Bytes())
-}
-
-func NewData(config *config.Config) *Data {
-	return &Data{Config: config}
 }
